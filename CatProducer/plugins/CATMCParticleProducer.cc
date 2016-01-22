@@ -1,5 +1,5 @@
 #include "FWCore/Framework/interface/Frameworkfwd.h"
-#include "FWCore/Framework/interface/EDProducer.h"
+#include "FWCore/Framework/interface/stream/EDProducer.h"
 #include "FWCore/Framework/interface/Event.h"
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 
@@ -19,12 +19,12 @@ using namespace std;
 
 namespace cat {
 
-  class CATMCParticleProducer : public edm::EDProducer {
+  class CATMCParticleProducer : public edm::stream::EDProducer<> {
   public:
     explicit CATMCParticleProducer(const edm::ParameterSet & iConfig);
     virtual ~CATMCParticleProducer() { }
 
-    virtual void produce(edm::Event & iEvent, const edm::EventSetup & iSetup);
+    void produce(edm::Event & iEvent, const edm::EventSetup & iSetup) override;
 
   private:
     edm::EDGetTokenT<reco::GenParticleCollection> src_;
@@ -44,18 +44,18 @@ cat::CATMCParticleProducer::CATMCParticleProducer(const edm::ParameterSet & iCon
   produces<std::vector<cat::MCParticle> >();
 }
 
-void 
-cat::CATMCParticleProducer::produce(edm::Event & iEvent, const edm::EventSetup & iSetup) 
+void
+cat::CATMCParticleProducer::produce(edm::Event & iEvent, const edm::EventSetup & iSetup)
 {
   Handle<reco::GenParticleCollection> genParticles;
   iEvent.getByToken(src_,genParticles);
-    
+
   auto_ptr<vector<cat::MCParticle> >  out(new vector<cat::MCParticle>());
 
   for (const reco::GenParticle & aGenParticle : *genParticles) {
     // fix me!! have better pruning of mc particles
-    if (fabs(aGenParticle.pdgId()) != 13) // including all muons for now
-      if ( aGenParticle.pt() < pt_ || fabs(aGenParticle.eta()) > eta_  ) continue;  
+    if (std::abs(aGenParticle.pdgId()) != 13) // including all muons for now
+      if ( aGenParticle.pt() < pt_ || std::abs(aGenParticle.eta()) > eta_  ) continue;
 
     cat::MCParticle aMCParticle(aGenParticle);
 

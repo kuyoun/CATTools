@@ -1,5 +1,5 @@
 #include "FWCore/Framework/interface/Frameworkfwd.h"
-#include "FWCore/Framework/interface/EDProducer.h"
+#include "FWCore/Framework/interface/stream/EDProducer.h"
 #include "FWCore/Framework/interface/MakerMacros.h"
 
 #include "FWCore/Framework/interface/Event.h"
@@ -9,6 +9,8 @@
 #include "FWCore/Utilities/interface/InputTag.h"
 #include "PhysicsTools/Utilities/interface/LumiReWeighting.h"
 #include "SimDataFormats/PileupSummaryInfo/interface/PileupSummaryInfo.h"
+#include "DataFormats/VertexReco/interface/Vertex.h"
+#include "DataFormats/VertexReco/interface/VertexFwd.h"
 
 #include "DataFormats/Common/interface/View.h"
 
@@ -18,80 +20,134 @@
 
 using namespace std;
 
-class PileupWeightProducer : public edm::EDProducer
+class PileupWeightProducer : public edm::stream::EDProducer<>
 {
 public:
   PileupWeightProducer(const edm::ParameterSet& pset);
   ~PileupWeightProducer() {};
 
-  void produce(edm::Event& event, const edm::EventSetup& eventSetup);
+  void produce(edm::Event& event, const edm::EventSetup& eventSetup) override;
 
 private:
   edm::LumiReWeighting lumiWeights_, lumiWeightsUp_, lumiWeightsDn_;
 
+  enum class WeightingMethod { Standard, RedoWeight, NVertex };
+  WeightingMethod weightingMethod_;
+
+  std::vector<double> simpleWeights_;
+
   typedef std::vector<PileupSummaryInfo> PUInfos;
   edm::EDGetTokenT<PUInfos> puToken_;
+  edm::EDGetTokenT<reco::VertexCollection> vertexToken_;
 
+  edm::EDGetTokenT<int> nTrueIntrToken_;
 };
 
 PileupWeightProducer::PileupWeightProducer(const edm::ParameterSet& pset)
 {
-  std::vector<double> pileupMC = pset.getParameter<std::vector<double> >("pileupMC");
-  std::vector<double> pileupRD = pset.getParameter<std::vector<double> >("pileupRD");
-  std::vector<double> pileupUp = pset.getParameter<std::vector<double> >("pileupUp");
-  std::vector<double> pileupDn = pset.getParameter<std::vector<double> >("pileupDn");
+  const string methodName = pset.getParameter<string>("weightingMethod");
+  if      ( methodName == "Standard" ) weightingMethod_ = WeightingMethod::Standard;
+  else if ( methodName == "RedoWeight" ) weightingMethod_ = WeightingMethod::RedoWeight;
+  else if ( methodName == "NVertex"  ) weightingMethod_ = WeightingMethod::NVertex;
+  else throw cms::Exception("ConfigError") << "Cannot find weighting method \""
+                                           << methodName << "\", should be Standard, RedoWeight or NVertex\n";
 
-  std::vector<float> pileupMCTmp;
-  std::vector<float> pileupRDTmp;
-  std::vector<float> pileupUpTmp, pileupDnTmp;
-  for ( int i=0, n=min(pileupMC.size(), pileupRD.size()); i<n; ++i )
+  if ( weightingMethod_ == WeightingMethod::NVertex )
   {
-    pileupMCTmp.push_back(pileupMC[i]);
-    pileupRDTmp.push_back(pileupRD[i]);
-    pileupUpTmp.push_back(pileupUp[i]);
-    pileupDnTmp.push_back(pileupDn[i]);
+    std::cerr << "!!PileupWeightProducer!! We are using NON STANDARD method for the pileup reweight.\n"
+              << "                         This weight values are directly from reco vertex\n";
+    vertexToken_ = consumes<reco::VertexCollection>(pset.getParameter<edm::InputTag>("vertex"));
+    simpleWeights_ = pset.getParameter<std::vector<double> >("simpleWeights");
+    const double sumW = std::accumulate(simpleWeights_.begin(), simpleWeights_.end(), 0.);
+    if ( sumW > 0 ) { for ( auto& w : simpleWeights_ ) { w /= sumW; } }
   }
-  lumiWeights_ = edm::LumiReWeighting(pileupMCTmp, pileupRDTmp);
-  lumiWeightsUp_ = edm::LumiReWeighting(pileupMCTmp, pileupUpTmp);
-  lumiWeightsDn_ = edm::LumiReWeighting(pileupMCTmp, pileupDnTmp);
+  else
+  {
+    if ( weightingMethod_ == WeightingMethod::Standard )
+    {
+      puToken_ = consumes<PUInfos>(pset.getParameter<edm::InputTag>("pileupInfo"));
+      vertexToken_ = consumes<reco::VertexCollection>(pset.getParameter<edm::InputTag>("vertex"));
+    }
+    else if ( weightingMethod_ == WeightingMethod::RedoWeight )
+    {
+      nTrueIntrToken_ = consumes<int>(pset.getParameter<edm::InputTag>("nTrueIntr"));
+    }
+    std::vector<double> pileupMC = pset.getParameter<std::vector<double> >("pileupMC");
+    std::vector<double> pileupRD = pset.getParameter<std::vector<double> >("pileupRD");
+    std::vector<double> pileupUp = pset.getParameter<std::vector<double> >("pileupUp");
+    std::vector<double> pileupDn = pset.getParameter<std::vector<double> >("pileupDn");
+    const double sumWMC = std::accumulate(pileupMC.begin(), pileupMC.end(), 0.);
+    const double sumWRD = std::accumulate(pileupRD.begin(), pileupRD.end(), 0.);
+    const double sumWUp = std::accumulate(pileupUp.begin(), pileupUp.end(), 0.);
+    const double sumWDn = std::accumulate(pileupDn.begin(), pileupDn.end(), 0.);
 
-  puToken_ = consumes<PUInfos>(edm::InputTag("addPileupInfo"));
+    std::vector<float> pileupMCTmp;
+    std::vector<float> pileupRDTmp;
+    std::vector<float> pileupUpTmp, pileupDnTmp;
+    for ( int i=0, n=min(pileupMC.size(), pileupRD.size()); i<n; ++i )
+    {
+      pileupMCTmp.push_back(pileupMC[i]/sumWMC);
+      pileupRDTmp.push_back(pileupRD[i]/sumWRD);
+      pileupUpTmp.push_back(pileupUp[i]/sumWUp);
+      pileupDnTmp.push_back(pileupDn[i]/sumWDn);
+    }
+    lumiWeights_ = edm::LumiReWeighting(pileupMCTmp, pileupRDTmp);
+    lumiWeightsUp_ = edm::LumiReWeighting(pileupMCTmp, pileupUpTmp);
+    lumiWeightsDn_ = edm::LumiReWeighting(pileupMCTmp, pileupDnTmp);
+  }
 
   produces<int>("nTrueInteraction");
-  produces<double>("");
-  produces<double>("up");
-  produces<double>("dn");
+  produces<float>("");
+  produces<float>("up");
+  produces<float>("dn");
 
 }
 
 void PileupWeightProducer::produce(edm::Event& event, const edm::EventSetup& eventSetup)
 {
-  edm::Handle<std::vector<PileupSummaryInfo> > puHandle;
-  event.getByToken(puToken_, puHandle);
-
   std::auto_ptr<int> nTrueIntr(new int(-1));
-  std::auto_ptr<double> weight(new double(1.));
-  std::auto_ptr<double> weightUp(new double(1.));
-  std::auto_ptr<double> weightDn(new double(1.));
+  std::auto_ptr<float> weight(new float(1.));
+  std::auto_ptr<float> weightUp(new float(1.));
+  std::auto_ptr<float> weightDn(new float(1.));
 
-  if ( !event.isRealData() and puHandle.isValid() )
-  {
-    for ( auto& puInfo : *puHandle )
-    {
-      //const int nIntr = puInfo.getPU_NumInteractions();
-      const int bx = puInfo.getBunchCrossing();
+  if ( !event.isRealData() ){
+    if ( weightingMethod_ == WeightingMethod::NVertex) {
+      edm::Handle<reco::VertexCollection> vertexHandle;
+      event.getByToken(vertexToken_, vertexHandle);
 
-      if ( bx == 0 )
-      {
-        *nTrueIntr = puInfo.getTrueNumInteractions();
+      const int nPVBin = std::min(simpleWeights_.size(), vertexHandle->size()) - 1;
+      if ( nPVBin >= 0 ){
+        *weight   = simpleWeights_[nPVBin];
+        *weightUp = simpleWeights_[nPVBin];
+        *weightDn = simpleWeights_[nPVBin];
       }
     }
-    
-    if ( *nTrueIntr > 0 )
-    {
-      *weight   = lumiWeights_.weight(*nTrueIntr);
-      *weightUp = lumiWeightsUp_.weight(*nTrueIntr);
-      *weightDn = lumiWeightsDn_.weight(*nTrueIntr);
+    else {
+      if ( weightingMethod_ == WeightingMethod::Standard ) {
+        edm::Handle<std::vector<PileupSummaryInfo> > puHandle;
+        event.getByToken(puToken_, puHandle);
+
+        for ( auto& puInfo : *puHandle ){
+          //const int nIntr = puInfo.getPU_NumInteractions();
+          const int bx = puInfo.getBunchCrossing();
+
+          if ( bx == 0 ){
+            *nTrueIntr = puInfo.getTrueNumInteractions();
+            break;
+          }
+        }
+      }
+      else if ( weightingMethod_ == WeightingMethod::RedoWeight ) {
+        edm::Handle<int> nTrueIntrHandle;
+        event.getByToken(nTrueIntrToken_, nTrueIntrHandle);
+        *nTrueIntr = *nTrueIntrHandle;
+      }
+
+      if ( *nTrueIntr > 0 ) {
+        *weight   = lumiWeights_.weight(*nTrueIntr);
+        *weightUp = lumiWeightsUp_.weight(*nTrueIntr);
+        *weightDn = lumiWeightsDn_.weight(*nTrueIntr);
+      }
     }
   }
 

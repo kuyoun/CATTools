@@ -1,5 +1,5 @@
 #include "FWCore/Framework/interface/Frameworkfwd.h"
-#include "FWCore/Framework/interface/EDProducer.h"
+#include "FWCore/Framework/interface/stream/EDProducer.h"
 #include "FWCore/Framework/interface/Event.h"
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 
@@ -13,19 +13,18 @@
 #include "DataFormats/PatCandidates/interface/PackedCandidate.h"
 #include "CommonTools/UtilAlgos/interface/StringCutObjectSelector.h"
 #include "RecoEcal/EgammaCoreTools/interface/EcalClusterLazyTools.h"
-#include "FWCore/Utilities/interface/isFinite.h"
 
 using namespace edm;
 using namespace std;
 
 namespace cat {
 
-  class CATTauProducer : public edm::EDProducer {
+  class CATTauProducer : public edm::stream::EDProducer<> {
   public:
     explicit CATTauProducer(const edm::ParameterSet & iConfig);
     virtual ~CATTauProducer() { }
 
-    virtual void produce(edm::Event & iEvent, const edm::EventSetup & iSetup);
+    void produce(edm::Event & iEvent, const edm::EventSetup & iSetup) override;
 
   private:
     edm::EDGetTokenT<pat::TauCollection> src_;
@@ -39,7 +38,7 @@ cat::CATTauProducer::CATTauProducer(const edm::ParameterSet & iConfig) :
   produces<std::vector<cat::Tau> >();
 }
 
-void 
+void
 cat::CATTauProducer::produce(edm::Event & iEvent, const edm::EventSetup & iSetup)
 {
   bool runOnMC_ = !iEvent.isRealData();

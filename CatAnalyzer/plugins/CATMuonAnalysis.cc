@@ -1,9 +1,4 @@
-// system include files
-#include <memory>
-
-// user include files
-#include "FWCore/Framework/interface/Frameworkfwd.h"
-#include "FWCore/Framework/interface/EDAnalyzer.h"
+#include "FWCore/Framework/interface/one/EDAnalyzer.h"
 #include "FWCore/ParameterSet/interface/ParameterSet.h"
 #include "FWCore/Framework/interface/Event.h"
 #include "FWCore/Framework/interface/MakerMacros.h"
@@ -24,26 +19,23 @@
 #include "DataFormats/PatCandidates/interface/LookupTableRecord.h"
 
 #include "TH1F.h"
-#include "TFile.h"
 #include "TTree.h"
 
 using namespace std;
 //
 // class decleration
 //
-class CATMuonAnalysis : public edm::EDAnalyzer {
+class CATMuonAnalysis : public edm::one::EDAnalyzer<edm::one::SharedResources> {
   public:
     explicit CATMuonAnalysis(const edm::ParameterSet&);
     ~CATMuonAnalysis();
 
   private:
-    virtual void beginJob() ;
-    virtual void analyze(const edm::Event&, const edm::EventSetup&);
-    virtual void endJob() ;
+    virtual void analyze(const edm::Event&, const edm::EventSetup&) override;
 
     // ----------member data ---------------------------
 
-    edm::EDGetTokenT<edm::View<cat::Muon> > src_;
+    edm::EDGetTokenT<cat::MuonCollection> src_;
 
     TH1F* phi;
     TH1F* eta;
@@ -52,14 +44,15 @@ class CATMuonAnalysis : public edm::EDAnalyzer {
     TH1F* nhIso;
     TH1F* phIso;
     TH1F* puIso;
-    
+
 };
 
 CATMuonAnalysis::CATMuonAnalysis(const edm::ParameterSet& iConfig):
-  src_(consumes<edm::View<cat::Muon> >(iConfig.getParameter<edm::InputTag>("src")))
+  src_(consumes<cat::MuonCollection>(iConfig.getParameter<edm::InputTag>("src")))
 {
+  usesResource("TFileService");
   edm::Service<TFileService> fs;
-  
+
   phi   = fs->make<TH1F>("phi","phi",400,0,4);
   eta   = fs->make<TH1F>("eta","eta",400,0,4);
   pt    = fs->make<TH1F>("pt","pt",400,0,4);
@@ -77,21 +70,13 @@ CATMuonAnalysis::~CATMuonAnalysis()
 
 }
 
-void CATMuonAnalysis::beginJob(){
-  //Add event and RUN BRANCHING         
-}
-
-void CATMuonAnalysis::endJob(){
-
-}
-
 void CATMuonAnalysis::analyze( const edm::Event& iEvent, const edm::EventSetup& iSetup){
 
   using namespace edm;
   using namespace std;
   using namespace reco;
 
-  Handle<View<cat::Muon> > src;
+  Handle<cat::MuonCollection> src;
   iEvent.getByToken(src_, src);
 
   for (unsigned int i = 0; i < src->size() ; i++) {

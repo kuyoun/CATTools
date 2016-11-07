@@ -1,7 +1,7 @@
 from CATTools.CatProducer.catTemplate_cfg import *
 ## some options
-doSecVertex=False # for jpsi candidates
-doDstar=False      # for Dstar meson.
+doSecVertex=True # for jpsi candidates
+doDstar=True      # for Dstar meson.
     
 ## setting up arguements
 from FWCore.ParameterSet.VarParsing import VarParsing
@@ -100,10 +100,16 @@ if options.inputFiles:
 #pat input files are removed because it would not work if useMiniAOD is on.    
 
 ## to suppress the long output at the end of the job
-process.MessageLogger.cerr.threshold = ''
+
+
+
 if options.maxEvents < 0:
     process.MessageLogger.cerr.FwkReport.reportEvery = 1000
 process.options.wantSummary = True
+
+process.MessageLogger.cerr.threshold = 'ERROR'
+process.MessageLogger.suppressWarning = cms.untracked.vstring(["JetPtMismatchAtLowPt", "NullTransverseMomentum"])
+
 
 ## for debugging
 #process.options.wantSummary = True

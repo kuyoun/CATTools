@@ -104,10 +104,14 @@ for opt, arg in opts:
     elif opt in ("-g", "--globalTag"):
         globalTag = arg
 
+if requestName == "" :
+    print "requestName(-n) is mandantory"
+    sys.exit(-1)
+
 if inputFile is None:
     catGetDatasetInfo = 'catGetDatasetInfo %s'%(requestName)
     os.system(catGetDatasetInfo)
-    datasets = json.load(open("%s/src/CATTools/CatAnalyzer/data/dataset.json"%os.environ['CMSSW_BASE']))
+    datasets = json.load(open("%s/src/CATTools/CatAnalyzer/data/dataset/dataset.json"%os.environ['CMSSW_BASE']))
     for d in datasets:
         dataset = d['DataSetName']
         if len( d['path']) == 0:
